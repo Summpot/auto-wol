@@ -231,8 +231,14 @@ jobs:
         run: |
           set -euo pipefail
 
+          project="${{ steps.cfg.outputs.pages_project }}"
           config="${WRANGLER_PAGES_CONFIG:?WRANGLER_PAGES_CONFIG is required}"
-          pnpm exec wrangler deploy --config "$config"
+          pnpm exec wrangler pages deploy dist \
+            --project-name "$project" \
+            --branch "main" \
+            --config "$config" \
+            --experimental-provision \
+            --experimental-auto-create
 
       - name: Summary
         shell: bash
