@@ -7,6 +7,15 @@ import {
 } from "partyserver";
 import type { Message, RouterOSWolResponse, WolTask } from "./shared";
 
+type AssetsFetcher = {
+	fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+};
+
+export interface Env extends Cloudflare.Env {
+	WolManager: DurableObjectNamespace;
+	ASSETS: AssetsFetcher;
+}
+
 export class WolManager extends Server<Env> {
 	static options = { hibernate: true };
 
@@ -168,44 +177,47 @@ export class WolManager extends Server<Env> {
 	}
 }
 
-// Handle HTTP requests for RouterOS integration
-export default {
-	async fetch(request, env) {
-		const url = new URL(request.url);
-		const pathname = url.pathname;
+const ROUTEROS_TASKS_PATH = "/api/wol/tasks";
+const ROUTEROS_METHODS = new Set(["GET", "PUT"]);
 
-		// Create a durable object ID for the default room
-		const id = env.Chat.idFromName("default");
-		// Get the stub for the durable object
-		const stub = env.Chat.get(id);
+function isRouterOSRequest(pathname: string, method: string) {
+	return pathname === ROUTEROS_TASKS_PATH && ROUTEROS_METHODS.has(method);
+}
 
-		// RouterOS API endpoint to get pending WOL tasks
-		if (pathname === "/api/wol/tasks" && request.method === "GET") {
-			// Forward the request to the durable object
-			return await stub.fetch(
-				new Request(request.url, {
-					method: "GET",
-					headers: request.headers,
-				}),
-			);
-		}
+async function forwardRouterOSRequest(request: Request, env: Env) {
+	const id = env.WolManager.idFromName("default");
+	const stub = env.WolManager.get(id);
 
-		// API endpoint to update task status
-		if (pathname === "/api/wol/tasks" && request.method === "PUT") {
-			// Forward the request to the durable object
-			return await stub.fetch(
-				new Request(request.url, {
-					method: "PUT",
-					headers: request.headers,
-					body: request.body,
-				}),
-			);
-		}
+	return stub.fetch(
+		new Request(request.url, {
+			method: request.method,
+			headers: request.headers,
+			body: request.body,
+		}),
+	);
+}
 
-		// Handle PartyKit WebSocket requests
-		return (
-			(await routePartykitRequest(request, { ...env })) ||
-			env.ASSETS.fetch(request)
-		);
+async function handleRequest(request: Request, env: Env) {
+	const url = new URL(request.url);
+	if (isRouterOSRequest(url.pathname, request.method)) {
+		return forwardRouterOSRequest(request, env);
+	}
+
+	const partykitResponse = await routePartykitRequest(request, { ...env });
+	if (partykitResponse) {
+		return partykitResponse;
+	}
+
+	return env.ASSETS.fetch(request);
+}
+
+export const onRequest = async ({ request, env }: { request: Request; env: Env }) =>
+	handleRequest(request, env);
+
+const worker = {
+	async fetch(request: Request, env: Env) {
+		return handleRequest(request, env);
 	},
 } satisfies ExportedHandler<Env>;
+
+export default worker;
