@@ -1,70 +1,124 @@
 # RouterOS Script for WOL Wake-on-LAN Manager
-:global WOL_TASKS_URL "https://your-worker-url.cloudflareworkers.com/api/wol/tasks"
-:global WOL_PENDING_URL "https://your-worker-url.cloudflareworkers.com/api/wol/tasks/pending"
-:global WOL_NOTIFY_URL "https://your-worker-url.cloudflareworkers.com/api/wol/tasks/notify"
-:global INTERVAL 60s ; # Check every 60 seconds
 
-:global WOLManager {
-    :local response [/tool fetch url=$WOL_PENDING_URL method=get output=none as-value]
-    :local status [:tonum ($response->"status")]
+:global WolTasksUrl "https://auto-wol.pages.dev/api/wol/tasks"
+:global WolNotifyUrl "https://auto-wol.pages.dev/api/wol/tasks/notify"
 
-    :if ($status != 200) do={
-        :log error "Failed to fetch pending WOL tasks (status: $status)"
-        :return
-    }
+:global WolInterface "ether1"
 
-    :local payload [:parsejson ($response->"data")]
-    :local tasks [:toarray ($payload->"tasks")]
+:local TempFileName "wol_tasks.json"
 
-    :if ([:len $tasks] = 0) do={
-        :log info "No pending WOL tasks"
-        :return
-    }
+:if ([:len [/file find name=$TempFileName]] > 0) do={
+    /file remove $TempFileName
+}
 
-    :foreach task in=$tasks do={
-        :local macAddress ($task->"macAddress")
-        :local taskId ($task->"id")
-        :log info "Waking $macAddress (task $taskId)"
-        /tool wol mac=$macAddress interface=bridge
+:local fetchSuccess false
+:local retryCount 0
+:local maxRetries 3
 
-        :local processingData ("{\"id\":\"$taskId\",\"status\":\"processing\"}")
-        /tool fetch url=$WOL_TASKS_URL method=put http-header-field="Content-Type: application/json" http-data=$processingData output=none
-
-        :delay 2s
-
-        :local normalizedMac [:toupper $macAddress]
-        :local arpEntry [/ip arp get [find mac-address=$normalizedMac] value=address]
-        :local notified false
-        :if ($arpEntry != "") do={
-            :local notifyData ("{\"id\":\"$taskId\"}")
-            /tool fetch url=$WOL_NOTIFY_URL method=post http-header-field="Content-Type: application/json" http-data=$notifyData output=none
-            :log info "$macAddress appeared in the ARP table, sending success callback"
-            :set notified true
-        }
-
-        :if ($notified) do={
-            :continue
-        }
-
-        :if ($arpEntry != "") do={
-            :local pingResult [/ping address=$arpEntry count=3 interval=1s as-value]
-            :local received [:tonum ($pingResult->"received")]
-            :if ($received > 0) do={
-                :local successData ("{\"id\":\"$taskId\",\"status\":\"success\"}")
-                /tool fetch url=$WOL_TASKS_URL method=put http-header-field="Content-Type: application/json" http-data=$successData output=none
-                :log info "Ping verified $macAddress; updating status to success"
-                :continue
-            }
-        }
-
-        :log error "Unable to confirm $macAddress after WOL; marking as failed"
-        :local failedData ("{\"id\":\"$taskId\",\"status\":\"failed\"}")
-        /tool fetch url=$WOL_TASKS_URL method=put http-header-field="Content-Type: application/json" http-data=$failedData output=none
+:while ($fetchSuccess = false && $retryCount < $maxRetries) do={
+    :do {
+        /tool fetch url=($WolTasksUrl . "/pending") http-method=get dst-path=$TempFileName
+        :set fetchSuccess true
+    } on-error={
+        :log warning ("WOL-Manager: Download failed. Attempt " . ($retryCount+1))
+        :set retryCount ($retryCount + 1)
+        :delay 3s
     }
 }
 
-/system scheduler add name="WOL-Manager" interval=$INTERVAL on-event="$WOLManager" policy=ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon start-time=startup
+:if ($fetchSuccess = false) do={
+    :log error "WOL-Manager: Failed to download tasks file."
+    :return
+}
 
-$WOLManager
+:delay 1s
 
-:log info "WOL Manager script installed and running!"
+:local fileId [/file find name=$TempFileName]
+:if ([:len $fileId] = 0) do={
+    :log error "WOL-Manager: File not found!"
+    :return
+}
+
+:local fileContent [/file get $fileId contents]
+
+:if ([:len $fileContent] = 0) do={
+    :log info "WOL-Manager: No pending tasks."
+    /file remove $TempFileName
+    :return
+}
+
+:local payload
+:do {
+    :set payload [:deserialize from=json $fileContent]
+} on-error={
+    :log error "WOL-Manager: Invalid JSON in file."
+    /file remove $TempFileName
+    :return
+}
+
+/file remove $TempFileName
+
+:local tasks ($payload->"tasks")
+
+:if ([:len $tasks] = 0) do={
+    :return
+}
+
+:foreach task in=$tasks do={
+    :local macAddress ($task->"macAddress")
+    :local taskId ($task->"id")
+    
+    :log info "WOL-Manager: Waking $macAddress (Task ID: $taskId)"
+    
+    :do {
+        /tool wol mac=$macAddress interface=$WolInterface
+    } on-error={
+        :log error ("WOL-Manager: Interface " . $WolInterface . " not found! Check script settings.")
+    }
+    
+    # Update Status: Processing
+    :local procData "{\"id\":\"$taskId\",\"status\":\"processing\"}"
+    :do {
+        /tool fetch url=$WolTasksUrl http-method=put http-header-field="Content-Type: application/json" http-data=$procData output=none
+    } on-error={ :log warning "WOL-Manager: Failed to update status to processing" }
+
+    :local isOnline false
+    :local attempts 0
+    :local maxLoop 20
+    
+    :while ($attempts < $maxLoop && $isOnline = false) do={
+        :set attempts ($attempts + 1)
+        :delay 5s
+        
+        :local arpId [/ip arp find mac-address=$macAddress]
+        
+        :if ([:len $arpId] > 0) do={
+            :local ipAddr [/ip arp get ($arpId->0) address]
+            :local pingCount [/ping address=$ipAddr count=1 interval=0.5s]
+            
+            :if ($pingCount > 0) do={
+                :set isOnline true
+                :log info "WOL-Manager: Device $macAddress is ONLINE"
+            }
+        }
+    }
+
+    :if ($isOnline) do={
+        :local succData "{\"id\":\"$taskId\",\"status\":\"success\"}"
+        :do {
+            /tool fetch url=$WolTasksUrl http-method=put http-header-field="Content-Type: application/json" http-data=$succData output=none
+        } on-error={}
+        
+        :local notifyData "{\"id\":\"$taskId\"}"
+        :do {
+            /tool fetch url=$WolNotifyUrl http-method=post http-header-field="Content-Type: application/json" http-data=$notifyData output=none
+        } on-error={}
+        
+    } else={
+        :log warning "WOL-Manager: Wake failed for $macAddress"
+        :local failData "{\"id\":\"$taskId\",\"status\":\"failed\"}"
+        :do {
+            /tool fetch url=$WolTasksUrl http-method=put http-header-field="Content-Type: application/json" http-data=$failData output=none
+        } on-error={}
+    }
+}

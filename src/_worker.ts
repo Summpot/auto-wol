@@ -70,22 +70,24 @@ async function getPendingTasks(env: Env): Promise<RouterOSWolResponse> {
 }
 
 async function getTaskById(env: Env, id: string): Promise<WolTask | null> {
-	const result = await env.WOL_DB
+	const row = await env.WOL_DB
 		.prepare("SELECT * FROM wol_tasks WHERE id = ? LIMIT 1")
 		.bind(id)
-		.first();
-	if (!result?.results?.length) return null;
-	return mapRowToTask(result.results[0]);
+		.first<Record<string, unknown>>();
+	
+	if (!row) return null;
+	return mapRowToTask(row);
 }
 
 async function getTaskByMac(env: Env, macAddress: string): Promise<WolTask | null> {
 	const normalizedMac = macAddress.toUpperCase();
-	const result = await env.WOL_DB
+	const row = await env.WOL_DB
 		.prepare("SELECT * FROM wol_tasks WHERE mac_address = ? ORDER BY created_at DESC LIMIT 1")
 		.bind(normalizedMac)
-		.first();
-	if (!result?.results?.length) return null;
-	return mapRowToTask(result.results[0]);
+		.first<Record<string, unknown>>();
+	
+	if (!row) return null;
+	return mapRowToTask(row);
 }
 
 async function persistTask(env: Env, task: WolTask) {
