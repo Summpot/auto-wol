@@ -125,16 +125,12 @@ jobs:
             throw new Error('wrangler.json d1_databases entry for WOL_DB is missing database_name.');
           }
 
-          // Base CI config that is always valid (does NOT include d1_databases) so we can run
-          // wrangler d1 list/create without being blocked by missing database_id.
-          const baseCiConfig = { ...cfg, account_id: accountId };
-          delete baseCiConfig.d1_databases;
-
-          const baseConfigPath = 'wrangler.base.ci.json';
-          writeJson(baseConfigPath, baseCiConfig);
+          function runD1(subcommand) {
+            return run(`pnpm exec wrangler d1 ${subcommand} --account-id ${accountId}`);
+          }
 
           // Ensure the D1 database exists (create if missing) and resolve its UUID.
-          let listOut = run(`pnpm exec wrangler d1 list --json --config ${baseConfigPath}`);
+          let listOut = runD1('list --json');
           let list = extractJson(listOut);
 
           let existing = Array.isArray(list)
@@ -145,9 +141,9 @@ jobs:
 
           if (!dbUuid) {
             console.log(`D1 database "${databaseName}" missing; creating it now.`);
-            run(`pnpm exec wrangler d1 create ${databaseName} --config ${baseConfigPath}`);
+            runD1(`create "${databaseName}"`);
 
-            listOut = run(`pnpm exec wrangler d1 list --json --config ${baseConfigPath}`);
+            listOut = runD1('list --json');
             list = extractJson(listOut);
             existing = Array.isArray(list)
               ? list.find((db) => String(db?.name ?? '').trim() === databaseName)
@@ -159,10 +155,8 @@ jobs:
             throw new Error(`Failed to resolve D1 database UUID for "${databaseName}".`);
           }
 
-          // Final CI config used for deploy (includes d1_databases with database_id).
-          const pagesCiConfig = {
+          const updatedConfig = {
             ...cfg,
-            account_id: accountId,
             d1_databases: d1Bindings.map((b) => {
               const binding = String(b?.binding ?? '').trim();
               const name = String(b?.database_name ?? '').trim();
@@ -173,11 +167,7 @@ jobs:
             }),
           };
 
-          const pagesConfigPath = 'wrangler.pages.ci.json';
-          writeJson(pagesConfigPath, pagesCiConfig);
-
-          // Write back to source file with database_id
-          writeJson(wranglerPath, pagesCiConfig);
+          writeJson(wranglerPath, updatedConfig);
 
           fs.appendFileSync(
             process.env.GITHUB_OUTPUT,
@@ -186,16 +176,15 @@ jobs:
               `compatibility_date=${compatibilityDate}`,
               `d1_database_name=${databaseName}`,
               `d1_database_id=${dbUuid}`,
-              `wrangler_base_config=${baseConfigPath}`,
-              `wrangler_pages_config=${pagesConfigPath}`,
+              `wrangler_base_config=${wranglerPath}`,
+              `wrangler_pages_config=${wranglerPath}`,
               '',
             ].join('\n'),
           );
 
           console.log(`Pages project: ${projectName}`);
           console.log(`D1: ${databaseName} (${dbUuid})`);
-          console.log(`Wrangler base config: ${baseConfigPath}`);
-          console.log(`Wrangler pages config: ${pagesConfigPath}`);
+          console.log(`Wrangler config: ${wranglerPath}`);
           NODE
 
       - name: Ensure Pages project exists
@@ -212,10 +201,11 @@ jobs:
           project="${PAGES_PROJECT:?PAGES_PROJECT is required}"
           compat="${COMPATIBILITY_DATE:-}"
           config="${WRANGLER_BASE_CONFIG:?WRANGLER_BASE_CONFIG is required}"
+          account="${CLOUDFLARE_ACCOUNT_ID:?CLOUDFLARE_ACCOUNT_ID is required}"
 
           echo "Ensuring Pages project '$project' exists (errors are safe to ignore):"
 
-          cmd=(pnpm exec wrangler pages project create "$project" --production-branch "main" --config "$config")
+          cmd=(pnpm exec wrangler pages project create "$project" --production-branch "main" --config "$config" --account-id "$account")
           if [ -n "$compat" ]; then
             cmd+=(--compatibility-date "$compat")
           fi
@@ -237,8 +227,10 @@ jobs:
 
           project="${{ steps.cfg.outputs.pages_project }}"
           config="${WRANGLER_PAGES_CONFIG:?WRANGLER_PAGES_CONFIG is required}"
+          account="${CLOUDFLARE_ACCOUNT_ID:?CLOUDFLARE_ACCOUNT_ID is required}"
           pnpm exec wrangler pages deploy dist \
             --project-name "$project" \
+            --account-id "$account" \
             --branch "main" \
             --experimental-provision \
             --experimental-auto-create
