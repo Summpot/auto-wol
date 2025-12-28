@@ -176,6 +176,9 @@ jobs:
           const pagesConfigPath = 'wrangler.pages.ci.json';
           writeJson(pagesConfigPath, pagesCiConfig);
 
+          // Write back to source file with database_id
+          writeJson(wranglerPath, pagesCiConfig);
+
           fs.appendFileSync(
             process.env.GITHUB_OUTPUT,
             [
