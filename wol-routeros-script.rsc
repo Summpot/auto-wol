@@ -1,9 +1,9 @@
-# RouterOS Script for WOL Wake-on-LAN Manager
+# RouterOS Script for WOL Wake-on-LAN Manager (DHCP Mode)
 
 :global WolTasksUrl "https://auto-wol.pages.dev/api/wol/tasks"
 :global WolNotifyUrl "https://auto-wol.pages.dev/api/wol/tasks/notify"
 
-:global WolInterface "ether1"
+:global WolInterface "ether2"
 
 :local TempFileName "wol_tasks.json"
 
@@ -76,7 +76,6 @@
         :log error ("WOL-Manager: Interface " . $WolInterface . " not found! Check script settings.")
     }
     
-    # Update Status: Processing
     :local procData "{\"id\":\"$taskId\",\"status\":\"processing\"}"
     :do {
         /tool fetch url=$WolTasksUrl http-method=put http-header-field="Content-Type: application/json" http-data=$procData output=none
@@ -90,16 +89,23 @@
         :set attempts ($attempts + 1)
         :delay 5s
         
-        :local arpId [/ip arp find mac-address=$macAddress]
+        :local leaseIds [/ip dhcp-server lease find mac-address=$macAddress]
         
-        :if ([:len $arpId] > 0) do={
-            :local ipAddr [/ip arp get ($arpId->0) address]
-            :local pingCount [/ping address=$ipAddr count=1 interval=0.5s]
+        :if ([:len $leaseIds] > 0) do={
+            :local lastIdx ([:len $leaseIds] - 1)
+            :local leaseId ($leaseIds->$lastIdx)
             
-            :if ($pingCount > 0) do={
+            :local status [/ip dhcp-server lease get $leaseId status]
+            :local ipAddr [/ip dhcp-server lease get $leaseId address]
+            
+            :if ($status = "bound") do={
                 :set isOnline true
-                :log info "WOL-Manager: Device $macAddress is ONLINE"
+                :log info ("WOL-Manager: Device $macAddress is ONLINE! (IP: $ipAddr, Status: Bound)")
+            } else={
+                :log info ("WOL-Manager: Lease found ($ipAddr) but status is '$status'. Waiting... ($attempts/$maxLoop)")
             }
+        } else={
+            :log info ("WOL-Manager: No DHCP lease found for $macAddress. Waiting... ($attempts/$maxLoop)")
         }
     }
 
@@ -115,7 +121,7 @@
         } on-error={}
         
     } else={
-        :log warning "WOL-Manager: Wake failed for $macAddress"
+        :log warning ("WOL-Manager: Wake failed for $macAddress (DHCP not bound) after " . $maxLoop . " attempts.")
         :local failData "{\"id\":\"$taskId\",\"status\":\"failed\"}"
         :do {
             /tool fetch url=$WolTasksUrl http-method=put http-header-field="Content-Type: application/json" http-data=$failData output=none
