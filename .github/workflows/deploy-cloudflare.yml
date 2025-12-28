@@ -126,7 +126,7 @@ jobs:
           }
 
           function runD1(subcommand) {
-            return run(`pnpm exec wrangler d1 ${subcommand} --account-id ${accountId}`);
+            return run(`pnpm exec wrangler d1 ${subcommand}`);
           }
 
           // Ensure the D1 database exists (create if missing) and resolve its UUID.
@@ -226,11 +226,8 @@ jobs:
           set -euo pipefail
 
           project="${{ steps.cfg.outputs.pages_project }}"
-          config="${WRANGLER_PAGES_CONFIG:?WRANGLER_PAGES_CONFIG is required}"
-          account="${CLOUDFLARE_ACCOUNT_ID:?CLOUDFLARE_ACCOUNT_ID is required}"
           pnpm exec wrangler pages deploy dist \
             --project-name "$project" \
-            --account-id "$account" \
             --branch "main" \
             --experimental-provision \
             --experimental-auto-create
