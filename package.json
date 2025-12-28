@@ -1,8 +1,9 @@
 {
 	"name": "auto-wol",
-	"description": "Chat with other users in real-time using Durable Objects and PartyKit.",
+	"type": "module",
+	"description": "WOL Wake-on-LAN Manager with real-time status tracking using Durable Objects.",
 	"cloudflare": {
-		"label": "Durable Chat App",
+		"label": "WOL Wake-on-LAN Manager",
 		"products": [
 			"Workers",
 			"Durable Objects"
@@ -14,23 +15,30 @@
 	},
 	"dependencies": {
 		"nanoid": "5.1.6",
-		"partyserver": "0.0.75",
+		"partyserver": "0.1.0",
 		"partysocket": "1.1.6",
-		"react": "^18.0.0",
-		"react-dom": "^18.0.0",
-		"react-router": "7.9.6"
+		"react": "^19.0.3",
+		"react-dom": "^19.0.3"
 	},
 	"devDependencies": {
-		"@types/react": "^18.0.0",
-		"@types/react-dom": "^18.0.0",
-		"esbuild": "0.27.0",
+		"@biomejs/biome": "2.3.10",
+		"@rsbuild/core": "^1.6.15",
+		"@rsbuild/plugin-react": "^1.4.2",
+		"@tailwindcss/postcss": "^4.1.18",
+		"@types/react": "^19.2.7",
+		"@types/react-dom": "^19.2.3",
+		"autoprefixer": "^10.4.23",
+		"postcss": "^8.5.6",
+		"tailwindcss": "^4.1.18",
 		"typescript": "5.9.3",
-		"wrangler": "4.56.0"
+		"wrangler": "4.54.0"
 	},
 	"private": true,
+	"packageManager": "pnpm@10.26.2",
 	"scripts": {
 		"cf-typegen": "wrangler types ./src/server/worker-configuration.d.ts",
 		"check": "tsc --project src/client && tsc --project src/server && wrangler deploy --dry-run",
+		"build": "rsbuild build",
 		"deploy": "wrangler deploy",
 		"dev": "wrangler dev"
 	}

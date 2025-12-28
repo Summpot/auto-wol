@@ -1,131 +1,183 @@
 import { createRoot } from "react-dom/client";
 import { usePartySocket } from "partysocket/react";
 import React, { useState } from "react";
-import {
-	BrowserRouter,
-	Routes,
-	Route,
-	Navigate,
-	useParams,
-} from "react-router";
 import { nanoid } from "nanoid";
+import type { WolTask, Message } from "../shared";
 
-import { names, type ChatMessage, type Message } from "../shared";
+import "./index.css"
 
 function App() {
-	const [name] = useState(names[Math.floor(Math.random() * names.length)]);
-	const [messages, setMessages] = useState<ChatMessage[]>([]);
-	const { room } = useParams();
+	const [tasks, setTasks] = useState<WolTask[]>([]);
+	const [macAddress, setMacAddress] = useState("");
+	const [error, setError] = useState("");
 
 	const socket = usePartySocket({
 		party: "chat",
-		room,
+		room: "default",
 		onMessage: (evt) => {
 			const message = JSON.parse(evt.data as string) as Message;
-			if (message.type === "add") {
-				const foundIndex = messages.findIndex((m) => m.id === message.id);
-				if (foundIndex === -1) {
-					// probably someone else who added a message
-					setMessages((messages) => [
-						...messages,
-						{
-							id: message.id,
-							content: message.content,
-							user: message.user,
-							role: message.role,
-						},
-					]);
-				} else {
-					// this usually means we ourselves added a message
-					// and it was broadcasted back
-					// so let's replace the message with the new message
-					setMessages((messages) => {
-						return messages
-							.slice(0, foundIndex)
-							.concat({
-								id: message.id,
-								content: message.content,
-								user: message.user,
-								role: message.role,
-							})
-							.concat(messages.slice(foundIndex + 1));
-					});
-				}
-			} else if (message.type === "update") {
-				setMessages((messages) =>
-					messages.map((m) =>
-						m.id === message.id
-							? {
-									id: message.id,
-									content: message.content,
-									user: message.user,
-									role: message.role,
-								}
-							: m,
-					),
+			if (message.type === "all-tasks") {
+				setTasks(message.tasks);
+			} else if (message.type === "add-task") {
+				setTasks((prevTasks) => [...prevTasks, message.task]);
+			} else if (message.type === "update-task") {
+				setTasks((prevTasks) =>
+					prevTasks.map((task) =>
+						task.id === message.task.id ? message.task : task
+					)
 				);
-			} else {
-				setMessages(message.messages);
 			}
 		},
 	});
 
+	const validateMacAddress = (mac: string): boolean => {
+		const macRegex = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
+		return macRegex.test(mac);
+	};
+
+	const handleSubmit = (e: React.FormEvent) => {
+		e.preventDefault();
+		setError("");
+
+		if (!validateMacAddress(macAddress)) {
+			setError("Invalid MAC address format. Please use XX:XX:XX:XX:XX:XX");
+			return;
+		}
+
+		const newTask: WolTask = {
+			id: nanoid(8),
+			macAddress: macAddress.toUpperCase(),
+			status: "pending",
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+			attempts: 0,
+		};
+
+		socket.send(
+			JSON.stringify({
+				type: "add-task",
+				task: newTask,
+			} satisfies Message)
+		);
+
+		setMacAddress("");
+	};
+
+	const getStatusBadgeClass = (status: string): string => {
+		switch (status) {
+			case "pending":
+				return "bg-yellow-100 text-yellow-800";
+			case "processing":
+				return "bg-blue-100 text-blue-800";
+			case "success":
+				return "bg-green-100 text-green-800";
+			case "failed":
+				return "bg-red-100 text-red-800";
+			default:
+				return "bg-gray-100 text-gray-800";
+		}
+	};
+
+	const formatDate = (timestamp: number): string => {
+		return new Date(timestamp).toLocaleString();
+	};
+
 	return (
-		<div className="chat container">
-			{messages.map((message) => (
-				<div key={message.id} className="row message">
-					<div className="two columns user">{message.user}</div>
-					<div className="ten columns">{message.content}</div>
+		<div className="max-w-7xl mx-auto px-4 py-8">
+			<h1 className="text-3xl font-bold text-gray-800 mb-8 text-center">
+				WOL Wake-on-LAN Manager
+			</h1>
+			
+			<div className="bg-white shadow-md rounded-lg p-6 mb-8">
+				<form onSubmit={handleSubmit} className="space-y-4">
+					<div className="flex gap-4">
+						<div className="flex-1">
+							<input
+								type="text"
+								value={macAddress}
+								onChange={(e) => setMacAddress(e.target.value)}
+								placeholder="Enter MAC address (XX:XX:XX:XX:XX:XX)"
+								className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+								autoComplete="off"
+							/>
+						</div>
+						<div className="w-32">
+							<button 
+								type="submit" 
+								className="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-md transition-colors"
+							>
+								Wake Device
+							</button>
+						</div>
+					</div>
+					{error && (
+						<p className="text-red-500 text-sm mt-2">{error}</p>
+					)}
+				</form>
+			</div>
+
+			<div className="bg-white shadow-md rounded-lg p-6">
+				<h2 className="text-xl font-semibold text-gray-800 mb-4">
+					Wake Tasks
+				</h2>
+				<div className="overflow-x-auto">
+					<table className="w-full text-left">
+						<thead className="bg-gray-50 border-b">
+							<tr>
+								<th className="px-4 py-3 text-sm font-medium text-gray-600">
+									MAC Address
+								</th>
+								<th className="px-4 py-3 text-sm font-medium text-gray-600">
+									Status
+								</th>
+								<th className="px-4 py-3 text-sm font-medium text-gray-600">
+									Attempts
+								</th>
+								<th className="px-4 py-3 text-sm font-medium text-gray-600">
+									Created At
+								</th>
+								<th className="px-4 py-3 text-sm font-medium text-gray-600">
+									Updated At
+								</th>
+							</tr>
+						</thead>
+						<tbody>
+							{tasks.length === 0 ? (
+								<tr className="border-b">
+									<td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+										No wake tasks yet
+									</td>
+								</tr>
+							) : (
+								tasks.map((task) => (
+									<tr key={task.id} className="border-b hover:bg-gray-50">
+										<td className="px-4 py-3 text-gray-700 font-mono">
+											{task.macAddress}
+										</td>
+										<td className="px-4 py-3">
+											<span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeClass(task.status)}`}>
+												{task.status}
+											</span>
+										</td>
+										<td className="px-4 py-3 text-gray-700">
+											{task.attempts}
+										</td>
+										<td className="px-4 py-3 text-gray-600 text-sm">
+											{formatDate(task.createdAt)}
+										</td>
+										<td className="px-4 py-3 text-gray-600 text-sm">
+											{formatDate(task.updatedAt)}
+										</td>
+									</tr>
+								))
+							)}
+						</tbody>
+					</table>
 				</div>
-			))}
-			<form
-				className="row"
-				onSubmit={(e) => {
-					e.preventDefault();
-					const content = e.currentTarget.elements.namedItem(
-						"content",
-					) as HTMLInputElement;
-					const chatMessage: ChatMessage = {
-						id: nanoid(8),
-						content: content.value,
-						user: name,
-						role: "user",
-					};
-					setMessages((messages) => [...messages, chatMessage]);
-					// we could broadcast the message here
-
-					socket.send(
-						JSON.stringify({
-							type: "add",
-							...chatMessage,
-						} satisfies Message),
-					);
-
-					content.value = "";
-				}}
-			>
-				<input
-					type="text"
-					name="content"
-					className="ten columns my-input-text"
-					placeholder={`Hello ${name}! Type a message...`}
-					autoComplete="off"
-				/>
-				<button type="submit" className="send-message two columns">
-					Send
-				</button>
-			</form>
+			</div>
 		</div>
 	);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-createRoot(document.getElementById("root")!).render(
-	<BrowserRouter>
-		<Routes>
-			<Route path="/" element={<Navigate to={`/${nanoid()}`} />} />
-			<Route path="/:room" element={<App />} />
-			<Route path="*" element={<Navigate to="/" />} />
-		</Routes>
-	</BrowserRouter>,
-);
+createRoot(document.getElementById("root")!).render(<App />);

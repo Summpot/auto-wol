@@ -1,55 +1,33 @@
-export type ChatMessage = {
+export type WolTask = {
 	id: string;
-	content: string;
-	user: string;
-	role: "user" | "assistant";
+	macAddress: string;
+	status: "pending" | "processing" | "success" | "failed";
+	createdAt: number;
+	updatedAt: number;
+	attempts: number;
+};
+
+export type WolRequest = {
+	macAddress: string;
 };
 
 export type Message =
 	| {
-			type: "add";
-			id: string;
-			content: string;
-			user: string;
-			role: "user" | "assistant";
+			type: "add-task";
+			task: WolTask;
 	  }
 	| {
-			type: "update";
-			id: string;
-			content: string;
-			user: string;
-			role: "user" | "assistant";
+			type: "update-task";
+			task: WolTask;
 	  }
 	| {
-			type: "all";
-			messages: ChatMessage[];
+			type: "all-tasks";
+			tasks: WolTask[];
 	  };
 
-export const names = [
-	"Alice",
-	"Bob",
-	"Charlie",
-	"David",
-	"Eve",
-	"Frank",
-	"Grace",
-	"Heidi",
-	"Ivan",
-	"Judy",
-	"Kevin",
-	"Linda",
-	"Mallory",
-	"Nancy",
-	"Oscar",
-	"Peggy",
-	"Quentin",
-	"Randy",
-	"Steve",
-	"Trent",
-	"Ursula",
-	"Victor",
-	"Walter",
-	"Xavier",
-	"Yvonne",
-	"Zoe",
-];
+export type RouterOSWolResponse = {
+	tasks: {
+		macAddress: string;
+		id: string;
+	}[];
+};
