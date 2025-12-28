@@ -134,19 +134,25 @@ jobs:
           writeJson(baseConfigPath, baseCiConfig);
 
           // Ensure the D1 database exists (create if missing) and resolve its UUID.
-          const listOut = run(`pnpm exec wrangler d1 list --json --config ${baseConfigPath}`);
-          const list = extractJson(listOut);
+          let listOut = run(`pnpm exec wrangler d1 list --json --config ${baseConfigPath}`);
+          let list = extractJson(listOut);
 
-          const existing = Array.isArray(list)
+          let existing = Array.isArray(list)
             ? list.find((db) => String(db?.name ?? '').trim() === databaseName)
             : null;
 
           let dbUuid = existing?.uuid ?? existing?.id ?? existing?.database_id;
 
           if (!dbUuid) {
-            const createOut = run(`pnpm exec wrangler d1 create ${databaseName} --json --config ${baseConfigPath}`);
-            const created = extractJson(createOut);
-            dbUuid = created?.uuid ?? created?.id ?? created?.database_id;
+            console.log(`D1 database "${databaseName}" missing; creating it now.`);
+            run(`pnpm exec wrangler d1 create ${databaseName} --config ${baseConfigPath}`);
+
+            listOut = run(`pnpm exec wrangler d1 list --json --config ${baseConfigPath}`);
+            list = extractJson(listOut);
+            existing = Array.isArray(list)
+              ? list.find((db) => String(db?.name ?? '').trim() === databaseName)
+              : null;
+            dbUuid = existing?.uuid ?? existing?.id ?? existing?.database_id;
           }
 
           if (!dbUuid || dbUuid === 'null') {
