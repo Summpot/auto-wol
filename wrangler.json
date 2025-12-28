@@ -1,21 +1,11 @@
 {
+	"$schema": "./node_modules/wrangler/config-schema.json",
 	"compatibility_date": "2025-10-08",
-	"main": "src/server/index.ts",
 	"name": "auto-wol",
-	"migrations": [
-		{
-			"new_sqlite_classes": ["WolManager"],
-			"tag": "v1"
-		}
-	],
-	"assets": {
-		"directory": "./dist",
-		"binding": "ASSETS",
-		"not_found_handling": "single-page-application"
-	},
 	"build": {
 		"command": "pnpm build"
 	},
+	"pages_build_output_dir": "./dist",
 	"durable_objects": {
 		"bindings": [
 			{

@@ -6,7 +6,7 @@ import {
 } from "partyserver";
 
 import { nanoid } from "nanoid";
-import type { WolTask, Message, RouterOSWolResponse } from "../shared";
+import type { WolTask, Message, RouterOSWolResponse } from "./shared";
 
 export class WolManager extends Server<Env> {
 	static options = { hibernate: true };

@@ -3,9 +3,9 @@ import { pluginReact } from "@rsbuild/plugin-react";
 
 export default defineConfig({
 	plugins: [pluginReact()],
-	source: {
-		entry: {
-			main: "./src/client/index.tsx",
-		},
-	},
+  output: {
+    cleanDistPath: {
+      keep: [/dist\/_worker.js/],
+    },
+  },
 });

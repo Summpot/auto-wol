@@ -2,7 +2,7 @@ import { createRoot } from "react-dom/client";
 import { usePartySocket } from "partysocket/react";
 import React, { useState } from "react";
 import { nanoid } from "nanoid";
-import type { WolTask, Message } from "../shared";
+import type { WolTask, Message } from "./shared";
 
 import "./index.css"
 
